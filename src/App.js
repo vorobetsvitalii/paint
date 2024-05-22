@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Menu from "./components/Menu";
-import ColorPicker from "./components/ColorPicker"; // Import the ColorPicker component
+import ColorPickerWithRotation from "./components/ColorPickerWithRotation"; // Import the new component
 import "./App.css";
 
 function App() {
@@ -31,6 +31,14 @@ function App() {
     lines.forEach((line) => {
       ctx.strokeStyle = line.color;
       ctx.lineWidth = line.lineWidth || lineWidth;
+      ctx.save();
+      if (line.rotation) {
+        const centerX = (line.points[0].x + line.points[1].x) / 2;
+        const centerY = (line.points[0].y + line.points[1].y) / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate((line.rotation * Math.PI) / 180);
+        ctx.translate(-centerX, -centerY);
+      }
       ctx.beginPath();
       if (line.type === "pencil") {
         ctx.moveTo(line.points[0].x, line.points[0].y);
@@ -53,6 +61,7 @@ function App() {
         ctx.arc(startX, startY, radius, 0, 2 * Math.PI);
       }
       ctx.stroke();
+      ctx.restore();
     });
   }, [lines, lineWidth]);
 
@@ -163,52 +172,37 @@ function App() {
 
   const endDrawing = () => {
     setIsDrawing(false);
-    redrawLines();
     localStorage.setItem("lines", JSON.stringify(lines));
   };
 
   const drawShape = (e) => {
-    switch (shape) {
-      case "pencil":
-        drawPencil(e);
-        break;
-      case "line":
-        drawLine(e);
-        break;
-      case "rectangle":
-        drawRectangle(e);
-        break;
-      case "circle":
-        drawCircle(e);
-        break;
-      default:
-        break;
-    }
+    if (shape === "pencil") drawPencil(e);
+    else if (shape === "line") drawLine(e);
+    else if (shape === "rectangle") drawRectangle(e);
+    else if (shape === "circle") drawCircle(e);
   };
 
   const handleRightClick = (e) => {
     e.preventDefault();
-    const mouseX = e.offsetX;
-    const mouseY = e.offsetY;
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
 
     let foundFigure = null;
     let centerX = 0;
     let centerY = 0;
 
-    for (let i = lines.length - 1; i >= 0; i--) {
+    for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+
       if (line.type === "rectangle") {
         const startX = line.points[0].x;
         const startY = line.points[0].y;
         const endX = line.points[1].x;
         const endY = line.points[1].y;
 
-        if (
-          (mouseX >= startX && mouseX <= endX && Math.abs(mouseY - startY) <= 5) ||
-          (mouseX >= startX && mouseX <= endX && Math.abs(mouseY - endY) <= 5) ||
-          (mouseY >= startY && mouseY <= endY && Math.abs(mouseX - startX) <= 5) ||
-          (mouseY >= startY && mouseY <= endY && Math.abs(mouseX - endX) <= 5)
-        ) {
+        if (mouseX >= startX && mouseX <= endX && mouseY >= startY && mouseY <= endY) {
           foundFigure = line;
           centerX = (startX + endX) / 2;
           centerY = (startY + endY) / 2;
@@ -313,6 +307,15 @@ function App() {
     }
   };
 
+  const handleChangeRotation = (newRotation) => {
+    if (selectedFigure) {
+      selectedFigure.rotation = newRotation;
+      setLines((prevLines) => [...prevLines]);
+      redrawLines();
+      localStorage.setItem("lines", JSON.stringify(lines));
+    }
+  };
+
   useEffect(() => {
     const canvas = canvasRef.current;
     canvas.addEventListener("contextmenu", handleRightClick);
@@ -349,7 +352,11 @@ function App() {
               transform: "translate(-50%, -50%)", // Center the ColorPicker
             }}
           >
-            <ColorPicker currentColor={selectedFigure.color} onChange={handleChangeColor} />
+            <ColorPickerWithRotation
+              currentColor={selectedFigure.color}
+              onChangeColor={handleChangeColor}
+              onChangeRotation={handleChangeRotation} // Handle rotation change
+            />
           </div>
         )}
       </div>
