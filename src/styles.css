@@ -1,0 +1,52 @@
+/* styles.css */
+.App {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    z-index: 100;
+  }
+  
+  .sidebar {
+    width: 20%;
+    padding: 20px;
+    background-color: #f0f0f0;
+  }
+  
+  .sidebar h2 {
+    margin-bottom: 20px;
+  }
+  
+  .shape-buttons button {
+    display: block;
+    margin-bottom: 10px;
+    padding: 10px;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .shape-buttons button:hover {
+    background-color: #e0e0e0;
+  }
+  
+  .color-picker {
+    margin-top: 20px;
+  }
+  
+  .color-picker label {
+    display: block;
+    margin-bottom: 10px;
+  }
+  
+  .workspace {
+    flex: 1;
+  }
+  
+  .workspace svg {
+    z-index: 1;
+    width: 100%;
+    height: 100%;
+  }
+  
