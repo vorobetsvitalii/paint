@@ -1,21 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Menu from "./components/Menu";
-import ColorPickerWithRotation from "./components/ColorPickerWithRotation"; // Import the new component
+import ColorPickerWithRotation from "./components/ColorPickerWithRotation";
 import "./App.css";
 
 function App() {
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
-  const colorPickerRef = useRef(null); // Reference for ColorPicker
+  const colorPickerRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [lineWidth, setLineWidth] = useState(6);
   const [lineColor, setLineColor] = useState("black");
   const [shape, setShape] = useState("pencil");
   const [lines, setLines] = useState([]);
   const [startCoords, setStartCoords] = useState({ x: 0, y: 0 });
-  const [selectedFigure, setSelectedFigure] = useState(null); // State for selected figure
-  const [showColorPicker, setShowColorPicker] = useState(false); // State for showing ColorPicker
-  const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 }); // Position of ColorPicker
+  const [selectedFigure, setSelectedFigure] = useState(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [colorPickerPosition, setColorPickerPosition] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     const storedLines = localStorage.getItem("lines");
@@ -32,7 +32,7 @@ function App() {
       ctx.strokeStyle = line.color;
       ctx.lineWidth = line.lineWidth || lineWidth;
       ctx.save();
-      if (line.rotation) {
+      if (line.rotation && line.type !== "circle") {
         const centerX = (line.points[0].x + line.points[1].x) / 2;
         const centerY = (line.points[0].y + line.points[1].y) / 2;
         ctx.translate(centerX, centerY);
@@ -81,7 +81,7 @@ function App() {
     const startY = e.nativeEvent.offsetY;
     setLines((prevLines) => [
       ...prevLines,
-      { type: "pencil", points: [{ x: startX, y: startY }], color: lineColor },
+      { type: "pencil", points: [{ x: startX, y: startY }], color: lineColor, rotation: 0 },
     ]);
   };
 
@@ -92,7 +92,7 @@ function App() {
     const startY = e.nativeEvent.offsetY;
     setLines((prevLines) => [
       ...prevLines,
-      { type: "line", points: [{ x: startX, y: startY }, { x: startX, y: startY }], color: lineColor },
+      { type: "line", points: [{ x: startX, y: startY }, { x: startX, y: startY }], color: lineColor, rotation: 0 },
     ]);
   };
 
@@ -103,7 +103,7 @@ function App() {
     const startY = e.nativeEvent.offsetY;
     setLines((prevLines) => [
       ...prevLines,
-      { type: "rectangle", points: [{ x: startX, y: startY }, { x: startX, y: startY }], color: lineColor },
+      { type: "rectangle", points: [{ x: startX, y: startY }, { x: startX, y: startY }], color: lineColor, rotation: 0 },
     ]);
   };
 
@@ -115,7 +115,7 @@ function App() {
     setStartCoords({ x: startX, y: startY });
     setLines((prevLines) => [
       ...prevLines,
-      { type: "circle", points: [{ x: startX, y: startY }], color: lineColor, radius: 0 },
+      { type: "circle", points: [{ x: startX, y: startY }], color: lineColor, radius: 0, rotation: 0 },
     ]);
   };
 
@@ -182,83 +182,148 @@ function App() {
     else if (shape === "circle") drawCircle(e);
   };
 
+  const distToSegment = (x, y, x1, y1, x2, y2) => {
+    const A = x - x1;
+    const B = y - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const len_sq = C * C + D * D;
+    let param = -1;
+    if (len_sq !== 0) param = dot / len_sq;
+
+    let xx, yy;
+
+    if (param < 0) {
+      xx = x1;
+      yy = y1;
+    } else if (param > 1) {
+      xx = x2;
+      yy = y2;
+    } else {
+      xx = x1 + param * C;
+      yy = y1 + param * D;
+    }
+
+    const dx = x - xx;
+    const dy = y - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const rotatePoint = (point, center, angle) => {
+    const radians = (Math.PI / 180) * angle;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const translatedX = point.x - center.x;
+    const translatedY = point.y - center.y;
+  
+    return {
+      x: translatedX * cos - translatedY * sin + center.x,
+      y: translatedX * sin + translatedY * cos + center.y,
+    };
+  };
+  
   const handleRightClick = (e) => {
     e.preventDefault();
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
-
+  
     let foundFigure = null;
     let centerX = 0;
     let centerY = 0;
-
+  
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-
+      const rotation = line.rotation || 0;
+  
       if (line.type === "rectangle") {
         const startX = line.points[0].x;
         const startY = line.points[0].y;
         const endX = line.points[1].x;
         const endY = line.points[1].y;
-
-        if (mouseX >= startX && mouseX <= endX && mouseY >= startY && mouseY <= endY) {
+        
+        const center = {
+          x: (startX + endX) / 2,
+          y: (startY + endY) / 2,
+        };
+  
+        const rotatedStart = rotatePoint({ x: startX, y: startY }, center, rotation);
+        const rotatedEnd = rotatePoint({ x: endX, y: endY }, center, rotation);
+  
+        const distToTopSide = distToSegment(mouseX, mouseY, rotatedStart.x, rotatedStart.y, rotatedEnd.x, rotatedStart.y);
+        const distToRightSide = distToSegment(mouseX, mouseY, rotatedEnd.x, rotatedStart.y, rotatedEnd.x, rotatedEnd.y);
+        const distToBottomSide = distToSegment(mouseX, mouseY, rotatedEnd.x, rotatedEnd.y, rotatedStart.x, rotatedEnd.y);
+        const distToLeftSide = distToSegment(mouseX, mouseY, rotatedStart.x, rotatedEnd.y, rotatedStart.x, rotatedStart.y);
+  
+        if (distToTopSide <= 5 || distToRightSide <= 5 || distToBottomSide <= 5 || distToLeftSide <= 5) {
           foundFigure = line;
-          centerX = (startX + endX) / 2;
-          centerY = (startY + endY) / 2;
+          centerX = center.x;
+          centerY = center.y;
           break;
         }
       } else if (line.type === "circle") {
         const startX = line.points[0].x;
         const startY = line.points[0].y;
         const radius = line.radius;
-        const distance = Math.sqrt((mouseX - startX) ** 2 + (mouseY - startY) ** 2);
-
-        if (Math.abs(distance - radius) <= 5) {
+  
+        const distanceToCenter = Math.sqrt((mouseX - startX) ** 2 + (mouseY - startY) ** 2);
+  
+        if (Math.abs(distanceToCenter - radius) <= 5) {
           foundFigure = line;
           centerX = startX;
           centerY = startY;
           break;
         }
-      } else if (line.type === "line" || line.type === "pencil") {
+        
+      }else if (line.type === "line") {
         const points = line.points;
-        for (let j = 0; j < points.length - 1; j++) {
-          const x1 = points[j].x;
-          const y1 = points[j].y;
-          const x2 = points[j + 1].x;
-          const y2 = points[j + 1].y;
-
-          const distToSegment = (x, y, x1, y1, x2, y2) => {
-            const A = x - x1;
-            const B = y - y1;
-            const C = x2 - x1;
-            const D = y2 - y1;
-
-            const dot = A * C + B * D;
-            const len_sq = C * C + D * D;
-            let param = -1;
-            if (len_sq !== 0) param = dot / len_sq;
-
-            let xx, yy;
-
-            if (param < 0) {
-              xx = x1;
-              yy = y1;
-            } else if (param > 1) {
-              xx = x2;
-              yy = y2;
-            } else {
-              xx = x1 + param * C;
-              yy = y1 + param * D;
-            }
-
-            const dx = x - xx;
-            const dy = y - yy;
-            return Math.sqrt(dx * dx + dy * dy);
-          };
-
+        const centerX = (points[0].x + points[1].x) / 2;
+        const centerY = (points[0].y + points[1].y) / 2;
+    
+        // Функція для обертання точки навколо центру
+        const rotatePoint = (point, center, angle) => {
+            const rad = (Math.PI / 180) * angle;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const nx = cos * (point.x - center.x) - sin * (point.y - center.y) + center.x;
+            const ny = sin * (point.x - center.x) + cos * (point.y - center.y) + center.y;
+            return { x: nx, y: ny };
+        };
+    
+        // Обертаємо обидві точки навколо центру
+        const rotatedStartPoint = rotatePoint(points[0], { x: centerX, y: centerY }, line.rotation);
+        const rotatedEndPoint = rotatePoint(points[1], { x: centerX, y: centerY }, line.rotation);
+    
+        const x1 = rotatedStartPoint.x;
+        const y1 = rotatedStartPoint.y;
+        const x2 = rotatedEndPoint.x;
+        const y2 = rotatedEndPoint.y;
+    
+        const dist = distToSegment(mouseX, mouseY, x1, y1, x2, y2);
+    
+        if (dist <= 5) {
+            foundFigure = line;
+            break;
+        }
+    }else if (line.type === "pencil") {
+        const points = line.points;
+        // Центр обертання - перша точка лінії
+        const center = points[0];
+    
+        // Обернути всі точки навколо центра
+        const rotatedPoints = points.map(point => rotatePoint(point, center, rotation));
+    
+        for (let j = 0; j < rotatedPoints.length - 1; j++) {
+          const x1 = rotatedPoints[j].x;
+          const y1 = rotatedPoints[j].y;
+          const x2 = rotatedPoints[j + 1].x;
+          const y2 = rotatedPoints[j + 1].y;
+    
           const dist = distToSegment(mouseX, mouseY, x1, y1, x2, y2);
-
+    
           if (dist <= 5) {
             foundFigure = line;
             centerX = (x1 + x2) / 2;
@@ -267,8 +332,9 @@ function App() {
           }
         }
       }
+    
     }
-
+  
     if (foundFigure) {
       setSelectedFigure(foundFigure);
       setColorPickerPosition({ x: centerX, y: centerY });
@@ -277,7 +343,7 @@ function App() {
       setShowColorPicker(false);
       setSelectedFigure(null);
     }
-  };
+  };  
 
   const handleClickOutside = (e) => {
     if (colorPickerRef.current && !colorPickerRef.current.contains(e.target)) {
@@ -344,18 +410,19 @@ function App() {
         />
         {showColorPicker && (
           <div
-            ref={colorPickerRef} // Attach ref to the ColorPicker div
+            ref={colorPickerRef}
             style={{
               position: "absolute",
               left: `${colorPickerPosition.x}px`,
               top: `${colorPickerPosition.y}px`,
-              transform: "translate(-50%, -50%)", // Center the ColorPicker
+              transform: "translate(-50%, -50%)",
             }}
           >
             <ColorPickerWithRotation
               currentColor={selectedFigure.color}
+              currentRotation={selectedFigure.rotation}
               onChangeColor={handleChangeColor}
-              onChangeRotation={handleChangeRotation} // Handle rotation change
+              onChangeRotation={handleChangeRotation}
             />
           </div>
         )}
